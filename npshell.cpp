@@ -3,18 +3,21 @@
 # include <cstring>
 # include <iostream>
 # include <vector>
+# include <map>
 # include <string>
 
 using namespace std;
 
-vector<string> path;
+map<string,string> env;
 
-void my_setenv(){
-
+void my_setenv(string name,string value){
+	env[name]=value;
+//	cout << name << " " << value << endl;
 }
 
-void my_printenv(){
-		
+void my_printenv(string name){
+	if(env.find(name)!=env.end())
+		cout << env[name] << endl;	
 }
 
 void my_exit(){
@@ -33,24 +36,32 @@ vector<string> my_strtok(string str){
 
 
 int main(){
-	
-	path.push_back("bin");
-	path.push_back(".");
+
+	/* default path */
+	env["PATH"] = "bin:.";
 	
 	string cmd;
 	cout << "% ";
 	while(getline(cin,cmd)){
-		vector<string> result;
-		result = my_strtok(cmd);
-		if(!strcmp(&result[0][0],"setenv")){
+	
+		/* handle input*/
+		vector<string> splitted_cmd;
+		splitted_cmd = my_strtok(cmd);
+
+		/* check whether is built-in command */
+		if(!strcmp(&splitted_cmd[0][0],"setenv")){
 		//	cout << "setenv"<<endl;
-		}else if(!strcmp(&result[0][0],"printenv")){
+			my_setenv(splitted_cmd[1],splitted_cmd[2]);
+		}else if(!strcmp(&splitted_cmd[0][0],"printenv")){
 		//	cout << "printenv" << endl;
-		}else if(!strcmp(&result[0][0],"exit")){
+			my_printenv(splitted_cmd[1]);
+		}else if(!strcmp(&splitted_cmd[0][0],"exit")){
 		//	cout << "exit" << endl;
 			my_exit();
 		}
 		cout << "% ";
+
+		// handle ou
 	}	
 	return 0;
 }
