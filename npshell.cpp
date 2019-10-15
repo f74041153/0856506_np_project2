@@ -13,6 +13,18 @@ using namespace std;
 
 map<string,string> env;
 
+struct Pipe{
+	int pipe_in;
+	int pipe_out;
+	int pipe_ctr;
+};
+
+struct CMD{
+	vector<string> parsed_cmd;
+	int N=0;
+};
+
+
 void my_setenv(string name,string value){
 	env[name]=value;
 //	cout << name << " " << value << endl;
@@ -53,54 +65,38 @@ bool isNumber(string str){
 	return true;	
 }
 
-vector<vector<string>> parse_cmd (string cmd){
-	
-	vector<vector<string>> parsed_cmd;
+vector<struct CMD> parse_cmd (string cmd){
+
+	vector<struct CMD> parsed_cmd;
 	stringstream ss1(cmd);
 	string str;
-	int pipe_site=0;
-	vector<int> pipe_site_table;
-
-
-	while(getline(ss1,str,'|')){
-		
+	while(getline(ss1,str,'|')){		
 		stringstream ss2(str);
-		vector<string> v;
-		bool check_pipeN = true;
-		
+		struct CMD tmp_cmd;
+		bool check_pipeN = true,notEndwithN=false;
 		while(ss2 >> str){
 			if(check_pipeN && isNumber(str)){
-				pipe_site_table.push_back(pipe_site);
-				check_pipeN = false;	
+				check_pipeN = false;
+				parsed_cmd.back().N = stoi(str);
+			}else{
+				notEndwithN=true;
+				tmp_cmd.parsed_cmd.push_back(str);
 			}
-			v.push_back(str);
 		}
-		parsed_cmd.push_back(v);
-		pipe_site++;
+		if(notEndwithN)parsed_cmd.push_back(tmp_cmd);
 
 	}
 	return parsed_cmd;
 }
 
-bool lineEndWithPipeN (vector<vector<string>>parsed_cmd){
-	vector<int> pipe_cnt_table;
-
-/*	for(int i=0;i<parsed_cmd.size();i++){
-		
-		int pipe_n = stoi(parsed_cmd[i][j]);
-		if(pipe_n>=0 && pipe_n<=1000){
-			if(parsed_cmd[i].size>1){
-				pipe_cnt_table.push_back
-			}
-			pipe_cnt_table.push_back(pipe_n);
-		}else{
-			for(int k=0;k<pipe_cnt_table.size();k++){
-				pipe_cnt_table[k]--;
-			}
-		}
-
+bool lineEndWithPipeN (vector<struct CMD> cmds){
+	
+	for(int i=0;i<cmds.size();i++){
+		if(i+cmds[i].N+1>cmds.size()){
+			return false;
+		}	
 	}
-*/
+	return true;
 }
 
 bool fileExist(string filename){
@@ -126,29 +122,29 @@ int main(){
 	/* default path */
 	my_setenv("PATH","bin:.");
 
-	string cmd;
+	string line;
 	cout << "% ";
-	while(getline(cin,cmd)){
+	while(getline(cin,line)){
 	
 		/* handle input*/
-		vector<vector<string>> parsed_cmd = parse_cmd(cmd);
+		vector<struct CMD> cmds = parse_cmd(line);
 		
 		/* check whether is built-in command */
-		if(!strcmp(parsed_cmd[0][0].c_str(),"setenv")){
-			my_setenv(parsed_cmd[0][1],parsed_cmd[0][2]);
-		}else if(!strcmp(parsed_cmd[0][0].c_str(),"printenv")){
-			my_printenv(parsed_cmd[0][1]);
-		}else if(!strcmp(parsed_cmd[0][0].c_str(),"exit")){
+		if(!strcmp(cmds[0].parsed_cmd[0].c_str(),"setenv")){
+			my_setenv(cmds[0].parsed_cmd[1],cmds[0].parsed_cmd[2]);
+		}else if(!strcmp(cmds[0].parsed_cmd[0].c_str(),"printenv")){
+			my_printenv(cmds[0].parsed_cmd[1]);
+		}else if(!strcmp(cmds[0].parsed_cmd[0].c_str(),"exit")){
 			my_exit();
 		}
 		
 
-		string path = "bin/"+parsed_cmd[0][0];
-		string arg = parsed_cmd[0].size()>1?parsed_cmd[0][1]:"";
+	//	string path = "bin/"+parsed_cmd[0][0];
+	//	string arg = parsed_cmd[0].size()>1?parsed_cmd[0][1]:"";
 	//	cout << arg << endl;
-		if(fileExist(path)){
-			create_process(path,arg);			
-		}
+	//	if(fileExist(path)){
+	//		create_process(path,arg);			
+	//	}
 
 		cout << "% ";
 
