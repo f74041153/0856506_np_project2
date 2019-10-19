@@ -1,0 +1,12 @@
+% ls: cannot access >: No such file or directory
+ls: cannot access ls.txt: No such file or directory
+bin:
+cat
+ls
+noop
+number
+removetag
+removetag0
+% Usage:test.html <file>
+% % cat: ls.txt: No such file or directory
+% % 

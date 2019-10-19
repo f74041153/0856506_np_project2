@@ -8,11 +8,11 @@
 # include <sstream>
 # include <sys/stat.h>
 # include <sys/wait.h>
-# include <unistd.h>
+# include <unistd.h> 
 
 using namespace std;
 
-map<string,string> env;
+map<string,vector<string>> env;
 
 struct Pipe{
 	int pipe_in;
@@ -23,15 +23,29 @@ struct Pipe{
 struct CMD{
 	vector<string> parsed_cmd;
 	int N=0;
+	int action;
 };
 
 void my_setenv(string name,string value){
-	env[name]=value;
+	stringstream ss(value);
+	string str;
+	vector<string> v;
+	while(getline(ss,str,':')){
+		v.push_back(str);
+	}
+	env[name] = v;
 }
 
 void my_printenv(string name){
-	if(env.find(name)!=env.end())
-		cout << env[name] << endl;	
+	if(env.find(name)!=env.end()){
+		vector<string> v = env[name];
+		cout << v[0];
+		for(int i=1;i<v.size();i++){
+			cout << ":";
+			cout << v[i]; 
+		}
+		cout << endl;
+	}	
 }
 
 void my_exit(){
@@ -56,7 +70,7 @@ vector<struct CMD> parse_cmd (string cmd){
 	vector<struct CMD> parsed_cmd;
 	stringstream ss1(cmd);
 	string str;
-	while(getline(ss1,str,'|')){		
+	while(getline(ss1,str,'|')){	
 		stringstream ss2(str);
 		struct CMD tmp_cmd;
 		bool check_pipeN = true,notEndwithN=false;
@@ -70,9 +84,51 @@ vector<struct CMD> parse_cmd (string cmd){
 			}
 		}
 		if(notEndwithN)parsed_cmd.push_back(tmp_cmd);
-
 	}
 	return parsed_cmd;
+
+	/*vector<struct CMD> cmds;
+	stringstream ss1(cmd);
+	string str;
+	while(ss1 >> str){
+		// parsed by space
+		tmp.push_back(str);
+	}
+	int prev_stop = -1;
+	for(int i=0;i<tmp.size();i++){
+		if(tmp[i][0]=='|'){
+			struct CMD cmd_t;
+			for(int j=prev_stop+1;j<i;j++){
+				cmd_t.parsed_cmd.push_back(tmp[j]);
+			}
+			prev_stop = i;
+			cmd_t.action = 1;
+			cmd_t.N = stoi(&tmp[i][1]);
+			cmds.push_back(cmd_t);	
+		}else if(tmp[i][0]=='!'){
+			struct CMD cmd_t;
+			for(int j=prev_stop+1;j<i;j++){
+				cmd_t.parsed_cmd.push_back(tmp[j]);
+			} 
+			prev_stop = i;
+			cmd_t.action = 2;
+			cmd_t.N = stoi(&tmp[i][1]);
+			cmds.push_back(cmd_t);
+		}else if(tmp[i][0]=='>'){
+			struct CMD cmd_t;
+			for(int j=prev_stop+1;j<i;j++){
+    				cmd_t.parsed_cmd.push_back(tmp[j]);
+			}
+			prev_stop = i;
+			cmd_t.action = 3;
+			cmd_t.N = stoi(&tmp[i][1]);
+			cmds.push_back(cmd_t);
+			i++;
+			cmd_t.parsed_cmd.push_back("write_file");
+			cmd_t.parsed_cmd.push_back(tmp[i]);
+			cmds.push_back(cmd_t);			
+		}
+	}*/
 }
 
 bool fileExist(string filename){
@@ -87,12 +143,12 @@ pid_t create_process(string cmd_path,vector<string> arg,int cmd_std_in,int cmd_s
 		argv.push_back((char*)arg[i].c_str());
 	}
 	argv.push_back(NULL);	
+	
 	// fork process
 	pid_t pid;
        	while((pid = fork())<0){
 		usleep(1000);
 	}
-
 	if(pid < 0){
 		cout << "fail" << endl;
 		exit(EXIT_FAILURE);
@@ -148,29 +204,43 @@ int main(){
 	cout << "% ";
 	while(getline(cin,line)){
 		/* handle input*/
-		vector<struct CMD> cmds = parse_cmd(line);
-		
-		/* check whether is built-in command */
-		if(!strcmp(cmds[0].parsed_cmd[0].c_str(),"setenv")){
-			my_setenv(cmds[0].parsed_cmd[1],cmds[0].parsed_cmd[2]);
-		}else if(!strcmp(cmds[0].parsed_cmd[0].c_str(),"printenv")){
-			my_printenv(cmds[0].parsed_cmd[1]);
-		}else if(!strcmp(cmds[0].parsed_cmd[0].c_str(),"exit")){
-			my_exit();
-		}
-		
-		/* other cmd */	
+		vector<struct CMD> cmds = parse_cmd(line);	
 		pid_t last_cmd_pid;
-		signal(SIGCHLD,childHandler);	
+		signal(SIGCHLD,childHandler);
+		
 		for(int i=0;i<cmds.size();i++){
-			
-			string exe_path = "bin/" + cmds[i].parsed_cmd[0];
-			if(!fileExist(exe_path))continue;
-				
+			/* filt out built-in command */
+			if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"setenv")){
+				my_setenv(cmds[i].parsed_cmd[1],cmds[i].parsed_cmd[2]);
+				continue;
+			}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"printenv")){
+				my_printenv(cmds[i].parsed_cmd[1]);
+				continue;
+			}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"exit")){
+				my_exit();
+				continue;
+			}
+	
+			/* handle unknown command*/
+			/* change directory */		
+			string exe_path; 
+			bool file_existed = false;
+			for(int j=0;j<env["PATH"].size();j++){
+				exe_path = env["PATH"][j]+"/"+ cmds[i].parsed_cmd[0];
+				if(fileExist(exe_path)){
+					file_existed = true;
+					break;
+				}
+			}
+			if(!file_existed){
+				 cout << "Unknown command: [" << cmds[i].parsed_cmd[0] << "]." <<endl;
+				 continue;
+			}
+	
 			int cmd_std_in,cmd_std_out,p,fd[2];
 			update_pipe_table(pipe_table);
-				
-			// stdin for this cmd
+			
+			/* stdin for this cmd */
 			p = search_pipe(pipe_table,0);
 			int pipe_of_this_cmd = p;
 			if(p>=0){
@@ -179,7 +249,7 @@ int main(){
 				cmd_std_in = STDIN_FILENO;
 			}
 
-			// stdout for this cmd 
+			/* stdout for this cmd */ 
 			if(cmds[i].N>0){
 				// pipeN
 				p = search_pipe(pipe_table,cmds[i].N);
