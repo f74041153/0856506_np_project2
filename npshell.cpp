@@ -25,9 +25,9 @@ struct Pipe{
 
 struct CMD{
 	vector<string> parsed_cmd;
-	int N=0;
+	int N;
 	int type;
-	string filename; // write in '>'
+	string filename;
 };
 
 void my_setenv(string name,string value){
@@ -129,14 +129,17 @@ pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cm
 	if(pid < 0){
 		cout << "fail" << endl;
 		exit(EXIT_FAILURE);
-	}else if (pid == 0){ // child 		
+	}else if (pid == 0){ // child		
 		dup2(cmd_std_in,STDIN_FILENO);
 		dup2(cmd_std_out,STDOUT_FILENO);
-		if(type == 3){
+		if(type == 2){
 			dup2(cmd_std_out,STDERR_FILENO);
-			close(cmd_std_out);		
 		}
 
+		// dup done, close all pipe and file description
+		if(type == 3){
+			close(cmd_std_out);		
+		}
 		for(int i=0;i<pipe_table.size();i++){
 			close(pipe_table[i].pipe_in);
 			close(pipe_table[i].pipe_out);
@@ -181,11 +184,15 @@ int main(){
 	string line;
 	cout << "% ";
 	while(getline(cin,line)){
-		/* handle input*/
+		/* handle input */
 		vector<struct CMD> cmds = parse_cmd(line);	
+		
 		pid_t last_cmd_pid;
 		signal(SIGCHLD,childHandler);
 		for(int i=0;i<cmds.size();i++){
+			/* update pipe table with change in command */
+			update_pipe_table(pipe_table);
+
 			/* filt out built-in command */
 			if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"setenv")){
 				my_setenv(cmds[i].parsed_cmd[1],cmds[i].parsed_cmd[2]);
@@ -213,36 +220,35 @@ int main(){
 				 continue;
 			}
 			
-			/* executable cmd*/
-			int cmd_std_in,cmd_std_out,p,p_fd[2],f_fd;
-			update_pipe_table(pipe_table);
-			
-			/* stdin for this cmd */
+			/* below are executable cmd */
+			int cmd_std_in, cmd_std_out;
+			int p, p_fd[2], f_fd;	
+			/* prepare stdin for this cmd */
 			p = search_pipe(pipe_table,0);
 			int pipe_of_this_cmd = p;
-			if(p>=0){
+			if(p >= 0){
 				cmd_std_in = pipe_table[p].pipe_out;
 			}else {
 				cmd_std_in = STDIN_FILENO;
 			}
-
-			/* stdout for this cmd */
-			if(cmds[i].type == 1 || cmds[i].type ==2){ // pipe
+			/* prepare stdout for this cmd */
+			if(cmds[i].type == 1 || cmds[i].type ==2){ // '|'or'!'
 				p = search_pipe(pipe_table,cmds[i].N);
-				if(p<0){
+				if(p < 0){
 					create_new_pipe(pipe_table,p_fd,cmds[i].N);
 					cmd_std_out = p_fd[1]; 
 				}else{
 					cmd_std_out = pipe_table[p].pipe_in;		
 				}				
-			}else if(cmds[i].type == 3){
+			}else if(cmds[i].type == 3){ // '>'
 				f_fd = open(cmds[i].filename.c_str(),O_RDWR|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
 				cmd_std_out = f_fd;
 			}else{
 				cmd_std_out = STDOUT_FILENO;
 			}
-			
+			/* create child process to execute cmd*/
 			last_cmd_pid = create_process(exe_path,cmds[i].parsed_cmd,cmd_std_in,cmd_std_out,cmds[i].type,pipe_table);
+			/* parent do this*/
 			if(pipe_of_this_cmd >= 0) {
 				close(pipe_table[pipe_of_this_cmd].pipe_in);
 				close(pipe_table[pipe_of_this_cmd].pipe_out);
