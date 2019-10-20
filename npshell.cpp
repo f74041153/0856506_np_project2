@@ -184,6 +184,12 @@ int main(){
 	string line;
 	cout << "% ";
 	while(getline(cin,line)){
+		
+		if(line.size() < 1){
+			cout << "% ";
+			continue;
+		}
+		
 		/* handle input */
 		vector<struct CMD> cmds = parse_cmd(line);	
 		
