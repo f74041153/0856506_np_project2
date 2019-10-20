@@ -8,6 +8,9 @@
 # include <sstream>
 # include <sys/stat.h>
 # include <sys/wait.h>
+# include <sys/types.h>
+# include <sys/stat.h>
+# include <fcntl.h>
 # include <unistd.h> 
 
 using namespace std;
@@ -23,7 +26,8 @@ struct Pipe{
 struct CMD{
 	vector<string> parsed_cmd;
 	int N=0;
-	int action;
+	int type;
+	string filename; // write in '>'
 };
 
 void my_setenv(string name,string value){
@@ -66,69 +70,41 @@ bool isNumber(string str){
 }
 
 vector<struct CMD> parse_cmd (string cmd){
-
-	vector<struct CMD> parsed_cmd;
-	stringstream ss1(cmd);
-	string str;
-	while(getline(ss1,str,'|')){	
-		stringstream ss2(str);
-		struct CMD tmp_cmd;
-		bool check_pipeN = true,notEndwithN=false;
-		while(ss2 >> str){
-			if(check_pipeN && isNumber(str)){
-				check_pipeN = false;
-				parsed_cmd.back().N = stoi(str);
-			}else{
-				notEndwithN=true;
-				tmp_cmd.parsed_cmd.push_back(str);
-			}
-		}
-		if(notEndwithN)parsed_cmd.push_back(tmp_cmd);
-	}
-	return parsed_cmd;
-
-	/*vector<struct CMD> cmds;
+	// parse by space
+	vector<string> v_t;
 	stringstream ss1(cmd);
 	string str;
 	while(ss1 >> str){
-		// parsed by space
-		tmp.push_back(str);
+		v_t.push_back(str);
 	}
-	int prev_stop = -1;
-	for(int i=0;i<tmp.size();i++){
-		if(tmp[i][0]=='|'){
-			struct CMD cmd_t;
-			for(int j=prev_stop+1;j<i;j++){
-				cmd_t.parsed_cmd.push_back(tmp[j]);
-			}
-			prev_stop = i;
-			cmd_t.action = 1;
-			cmd_t.N = stoi(&tmp[i][1]);
-			cmds.push_back(cmd_t);	
-		}else if(tmp[i][0]=='!'){
-			struct CMD cmd_t;
-			for(int j=prev_stop+1;j<i;j++){
-				cmd_t.parsed_cmd.push_back(tmp[j]);
-			} 
-			prev_stop = i;
-			cmd_t.action = 2;
-			cmd_t.N = stoi(&tmp[i][1]);
+
+	vector<struct CMD> cmds;
+	struct CMD cmd_t = {};
+	bool cmd_remain;
+	for(int i=0;i<v_t.size();i++){
+		if(v_t[i][0] == '|' || v_t[i][0] == '!'){
+			cmd_t.type = (v_t[i][0]=='|')?1:2;
+			if(v_t[i].size()>1)
+				cmd_t.N = stoi(v_t[i].substr(1,v_t[i].size()));
+			else 
+				cmd_t.N = 1;
 			cmds.push_back(cmd_t);
-		}else if(tmp[i][0]=='>'){
-			struct CMD cmd_t;
-			for(int j=prev_stop+1;j<i;j++){
-    				cmd_t.parsed_cmd.push_back(tmp[j]);
-			}
-			prev_stop = i;
-			cmd_t.action = 3;
-			cmd_t.N = stoi(&tmp[i][1]);
-			cmds.push_back(cmd_t);
+			cmd_t = {};
+			cmd_remain = false;	
+		}else if(v_t[i][0]=='>'){
+			cmd_t.type = 3;
 			i++;
-			cmd_t.parsed_cmd.push_back("write_file");
-			cmd_t.parsed_cmd.push_back(tmp[i]);
-			cmds.push_back(cmd_t);			
+			cmd_t.filename = v_t[i];
+			cmds.push_back(cmd_t);
+			cmd_t = {};
+			cmd_remain = false;
+		}else{
+			cmd_t.parsed_cmd.push_back(v_t[i]);
+			cmd_remain = true;
 		}
-	}*/
+	}
+	if(cmd_remain) cmds.push_back(cmd_t);
+	return cmds;
 }
 
 bool fileExist(string filename){
@@ -136,7 +112,7 @@ bool fileExist(string filename){
 	return (stat(filename.c_str(),&buf) == 0);
 }
 
-pid_t create_process(string cmd_path,vector<string> arg,int cmd_std_in,int cmd_std_out,vector<struct Pipe>& pipe_table){
+pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cmd_std_out, int type, vector<struct Pipe>& pipe_table){
 	// rearrange execv arg
 	vector<char*>argv;
 	for(int i=0;i<arg.size();i++){
@@ -149,21 +125,23 @@ pid_t create_process(string cmd_path,vector<string> arg,int cmd_std_in,int cmd_s
        	while((pid = fork())<0){
 		usleep(1000);
 	}
+
 	if(pid < 0){
 		cout << "fail" << endl;
 		exit(EXIT_FAILURE);
 	}else if (pid == 0){ // child 		
-		if(cmd_std_in != STDIN_FILENO){
-			dup2(cmd_std_in,STDIN_FILENO);
-		}
-		if (cmd_std_out != STDOUT_FILENO){
-			dup2(cmd_std_out,STDOUT_FILENO);
+		dup2(cmd_std_in,STDIN_FILENO);
+		dup2(cmd_std_out,STDOUT_FILENO);
+		if(type == 3){
+			dup2(cmd_std_out,STDERR_FILENO);
+			close(cmd_std_out);		
 		}
 
 		for(int i=0;i<pipe_table.size();i++){
 			close(pipe_table[i].pipe_in);
 			close(pipe_table[i].pipe_out);
-		}	
+		}
+			
 		if(execv(cmd_path.c_str(), &argv[0]) < 0){
 			exit(EXIT_FAILURE);
 		}
@@ -207,7 +185,6 @@ int main(){
 		vector<struct CMD> cmds = parse_cmd(line);	
 		pid_t last_cmd_pid;
 		signal(SIGCHLD,childHandler);
-		
 		for(int i=0;i<cmds.size();i++){
 			/* filt out built-in command */
 			if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"setenv")){
@@ -221,8 +198,7 @@ int main(){
 				continue;
 			}
 	
-			/* handle unknown command*/
-			/* change directory */		
+			/* find out exe in env */		
 			string exe_path; 
 			bool file_existed = false;
 			for(int j=0;j<env["PATH"].size();j++){
@@ -236,8 +212,9 @@ int main(){
 				 cout << "Unknown command: [" << cmds[i].parsed_cmd[0] << "]." <<endl;
 				 continue;
 			}
-	
-			int cmd_std_in,cmd_std_out,p,fd[2];
+			
+			/* executable cmd*/
+			int cmd_std_in,cmd_std_out,p,p_fd[2],f_fd;
 			update_pipe_table(pipe_table);
 			
 			/* stdin for this cmd */
@@ -249,34 +226,30 @@ int main(){
 				cmd_std_in = STDIN_FILENO;
 			}
 
-			/* stdout for this cmd */ 
-			if(cmds[i].N>0){
-				// pipeN
+			/* stdout for this cmd */
+			if(cmds[i].type == 1 || cmds[i].type ==2){ // pipe
 				p = search_pipe(pipe_table,cmds[i].N);
 				if(p<0){
-					create_new_pipe(pipe_table,fd,cmds[i].N);
-					cmd_std_out = fd[1]; 
+					create_new_pipe(pipe_table,p_fd,cmds[i].N);
+					cmd_std_out = p_fd[1]; 
 				}else{
 					cmd_std_out = pipe_table[p].pipe_in;		
 				}				
-			}else if(i<cmds.size()-1){
-				// pipe
-				p = search_pipe(pipe_table,1);
-				if(p<0){
-					create_new_pipe(pipe_table,fd,1);
-					cmd_std_out = fd[1];
-				}else{
-					cmd_std_out = pipe_table[p].pipe_in;	
-				}
+			}else if(cmds[i].type == 3){
+				f_fd = open(cmds[i].filename.c_str(),O_RDWR|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+				cmd_std_out = f_fd;
 			}else{
-				cmd_std_out = STDOUT_FILENO; 
+				cmd_std_out = STDOUT_FILENO;
 			}
-			last_cmd_pid = create_process(exe_path,cmds[i].parsed_cmd,cmd_std_in,cmd_std_out,pipe_table);
-					
+			
+			last_cmd_pid = create_process(exe_path,cmds[i].parsed_cmd,cmd_std_in,cmd_std_out,cmds[i].type,pipe_table);
 			if(pipe_of_this_cmd >= 0) {
 				close(pipe_table[pipe_of_this_cmd].pipe_in);
 				close(pipe_table[pipe_of_this_cmd].pipe_out);
 				pipe_table.erase(pipe_table.begin()+pipe_of_this_cmd);
+			}
+			if(cmds[i].type == 3){
+				close(f_fd);
 			}			
 		}
 		int status;
