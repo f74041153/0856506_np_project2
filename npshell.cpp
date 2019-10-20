@@ -258,8 +258,11 @@ int main(){
 				close(f_fd);
 			}			
 		}
-		int status;
-		waitpid(last_cmd_pid,&status,0);
+		/* wait last cmd to be done (this line has destination to file or screen) */
+		if(cmds.back().N <= 0){
+			int status;
+			waitpid(last_cmd_pid,&status,0);
+		}
 		cout << "% ";
 	}	
 	return 0;
