@@ -37,7 +37,7 @@ struct userInfo{
 	int id;
 	string nickname;
 	string ip;
-	string port;	
+	string port;
 };
 
 struct per_user{
@@ -128,11 +128,20 @@ int search_user(struct system_info& sys_info,int client_fd){
 	return -1;	
 }
 
+void broadcast(struct system_info& sys_info, string content){
+	for(int i=0;i<MAX_USER;i++){
+		if(sys_info.user_bitmap[i]){
+			write(sys_info.user_table[i].sockfd,&content[0],content.size());
+		}
+	}
+}
+
 void who(struct system_info& sys_info, int user_no){
 	string result = "<ID>\t<nickname>\t<IP:port>\t<indicate me>\n";
 	for(int i=0;i<MAX_USER;i++){
 		if(sys_info.user_bitmap[i]){
-			result += (to_string(i)+"\t"+sys_info.user_table[i].user_info.nickname+"\t"+sys_info.user_table[i].user_info.ip+":"+sys_info.user_table[i].user_info.port);
+			result += (to_string(i)+"\t"+sys_info.user_table[i].user_info.nickname+"\t"+sys_info.user_table[i].user_info.ip+":"+
+					sys_info.user_table[i].user_info.port);
 			if(i==user_no){
 				result += "\t<-me";		
 			}
@@ -142,20 +151,20 @@ void who(struct system_info& sys_info, int user_no){
 	write(sys_info.user_table[user_no].sockfd,&result[0],result.size());
 }
 
-void tell(){
-
+void tell(struct system_info& sys_info,int user_no,int recv_no,string content){
+	string response = "*** "+sys_info.user_table[user_no].user_info.nickname+"told you ***: "+content+"\n";
+	write(sys_info.user_table[recv_no].sockfd,&response[0],response.size());
 }
 
-void yell(){
-
+void yell(struct system_info& sys_info,int user_no, string content){
+	string response =  "*** "+sys_info.user_table[user_no].user_info.nickname+"yelled ***: "+content+"\n"; 
+	broadcast(sys_info,response);
 }
 
-void name(){
-	
-}
-
-void broadcast(){
-
+void name(struct system_info& sys_info, int user_no, string new_name){
+	sys_info.user_table[user_no].user_info.nickname = new_name;
+	string content = "*** User from "+sys_info.user_table[user_no].user_info.ip+":"+sys_info.user_table[user_no].user_info.port+" is named \'"+new_name+"\'. ***\n";
+	broadcast(sys_info,content);	
 }
 
 void user_setenv(struct system_info& sys_info,int user_no,string key,string value){
@@ -249,6 +258,19 @@ void user_exit(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 	FD_CLR(client_fd, &active_fd_set);
 }
 
+void set_new_user(struct system_info& sys_info,int client_fd,string ip,string port){
+	int user_no = get_user_no(sys_info);
+	user_setenv(sys_info,user_no,"PATH","bin:.");
+	sys_info.user_table[user_no].sockfd =client_fd;
+	sys_info.user_table[user_no].user_info.nickname = "(no name)";
+	sys_info.user_table[user_no].user_info.ip = ip;
+	sys_info.user_table[user_no].user_info.port = port;
+	sys_info.user_bitmap[user_no] = true;	
+	cout << user_no <<endl;
+	string content = "*** User ’(no name)’ entered from"+ip+":"+port+". ***\n";
+	broadcast(sys_info,content);
+}
+
 bool fileExist(string filename){
 	struct stat buf;
 	return (stat(filename.c_str(),&buf)==0);
@@ -286,13 +308,17 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 		}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"who")){
 			who(sys_info,user_no);
 			return;
-		}/*else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"tell")){
+		}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"name")){
+			name(sys_info,user_no,cmds[i].parsed_cmd[1]);
+			return;
+		}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"tell")){
+			int recv_no = stoi(cmds[i].parsed_cmd[1]);
+			tell(sys_info,user_no,recv_no,cmds[i].parsed_cmd[2]);
 			return;
 		}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"yell")){
+			yell(sys_info,user_no,cmds[i].parsed_cmd[1]);
 			return;
-		}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"name")){
-			return;
-		}*/
+		}
 		
 		string exe_path;
 		bool file_existed = false;
@@ -384,7 +410,7 @@ int main(int argc, char* argv[]){
 	}
 
 	string percent = "% ";
-	struct system_info sys_info;
+	struct system_info sys_info={};
 	socklen_t len = sizeof(struct sockaddr_in);	
 	int max_fd = server_sockfd;
 	fd_set active_fd_set;
@@ -419,14 +445,7 @@ int main(int argc, char* argv[]){
 						if(new_fd == -1){
 							print_error("accept error");		
 						}else{
-							int user_no = get_user_no(sys_info);
-							user_setenv(sys_info,user_no,"PATH","bin:.");
-							sys_info.user_table[user_no].sockfd = new_fd;
-							sys_info.user_table[user_no].user_info.nickname = "(no name)";
-							sys_info.user_table[user_no].user_info.ip = inet_ntoa(client_addr.sin_addr);
-							sys_info.user_table[user_no].user_info.port = to_string(ntohs(client_addr.sin_port));
-							sys_info.user_bitmap[user_no] = true;
-							cout << user_no <<endl;					
+							set_new_user(sys_info,new_fd,inet_ntoa(client_addr.sin_addr),to_string(ntohs(client_addr.sin_port)));					
 							
 							FD_SET(new_fd,&active_fd_set);
 							if(new_fd > max_fd){
