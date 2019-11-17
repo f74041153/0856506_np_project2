@@ -41,6 +41,11 @@ int main(int argc, char* argv[]){
 		cout << "setsocketopt error" << endl;
 		exit(EXIT_FAILURE);
 	}
+	// 
+	if (setsockopt(server_sockfd, SOL_SOCKET, SO_REUSEPORT, &port_reuse, sizeof(port_reuse)) < 0){
+		cout << "setsocketopt error" << endl;
+		exit(EXIT_FAILURE);
+	}
 
 	memset(&server_addr,0,sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
@@ -65,19 +70,25 @@ int main(int argc, char* argv[]){
 			return -1;
 		}
 		
-		pid_t pid = fork();
+		pid_t pid;
+	        while((pid=fork())<0){
+			usleep(1000);
+		};
 		if(pid == 0){
-		//	cout << client_sockfd << endl;
+			cout << client_sockfd << endl;
 			dup2(client_sockfd,STDOUT_FILENO);
 			dup2(client_sockfd,STDIN_FILENO);
+			cout << "1" << endl;
 			close(server_sockfd);
+			cout << "3" << endl;
 			close(client_sockfd);
-			
+			cout << "2" << endl;
 			string cmd = "npshell";
 			char* arg[2];
 			arg[0] = &cmd[0];
 			arg[1] = NULL;
 			if((execv("npshell",arg)) < 0){
+				cout << "exe error"<< endl;
 				exit(EXIT_FAILURE);	
 			}				
 		}else{

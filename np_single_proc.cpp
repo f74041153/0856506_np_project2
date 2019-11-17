@@ -27,9 +27,11 @@ struct Pipe{
 
 struct CMD{
 	vector<string> parsed_cmd;
+	int in_type;
+	int out_type;
 	int N;
-	int type;
-	int user;
+	int user_pipe_to;
+	int user_pipe_from;
 	string filename;
 };
 
@@ -78,47 +80,67 @@ void childHandler(int signo){
 }
 
 vector<struct CMD> parse_cmd(string cmd){
+	
 	vector<string> v_t;
+	vector<struct CMD> cmds;
+	struct CMD cmd_t = {};
 	stringstream ss1(cmd);
 	string str;
 	while(ss1>>str){
+		if(!strcmp(str.c_str(),"yell")){
+			string s1;
+			getline(ss1,s1);
+			cmd_t.parsed_cmd.push_back(str);
+			cmd_t.parsed_cmd.push_back(s1);
+			cout << str << " " << s1 << endl;
+			cmds.push_back(cmd_t);
+			return cmds;
+		}else if(!strcmp(str.c_str(),"tell")){
+			string s1,s2;
+			ss1>>s1;
+			getline(ss1,s2);
+			cmd_t.parsed_cmd.push_back(str);
+			cmd_t.parsed_cmd.push_back(s1);
+			cmd_t.parsed_cmd.push_back(s2);
+			cout << str << " " << s1 << " " << s2 << endl; 
+			cmds.push_back(cmd_t);
+			return cmds;			
+		}
 		v_t.push_back(str);
-		cout << str << endl;
 	}
 
-	vector<struct CMD> cmds;
-	struct CMD cmd_t = {};
-	bool cmd_remain;
+	int in_out = 0;
 	for(int i=0;i<v_t.size();i++){
 		if(v_t[i][0]=='|'||v_t[i][0]=='!'){
-			cmd_t.type = (v_t[i][0]=='|')?1:2;
+			in_out++;
+			cmd_t.out_type = (v_t[i][0]=='|')?1:2;
 			if(v_t[i].size()>1)
 				cmd_t.N = stoi(v_t[i].substr(1,v_t[i].size()));
 			else
 				cmd_t.N = 1;
-			cmds.push_back(cmd_t);
-			cmd_t = {};
-			cmd_remain = false;
 		}else if(!strcmp(v_t[i].c_str(),">>")|| (v_t[i].size()==1 && v_t[i][0]=='>')){
-			cmd_t.type = (!strcmp(v_t[i].c_str(),">>"))?4:3;
+			in_out++;
+			cmd_t.out_type = (!strcmp(v_t[i].c_str(),">>"))?4:3;
 			i++;
 			cmd_t.filename = v_t[i];
-			cmds.push_back(cmd_t);
-			cmd_t = {};
-			cmd_remain = false;
-		}else if(v_t[i][0]=='>' || v_t[i][0]=='<'){
-			cout << "user_pipe" << endl;
-			cmd_t.type = (v_t[i][0]=='>')?5:6;
-			cmd_t.user = stoi(v_t[i].substr(1,v_t[i].size()));
-			cmds.push_back(cmd_t);
-			cmd_t = {};
-			cmd_remain = false;
+		}else if(v_t[i][0]=='>'){
+			in_out++;
+			cmd_t.out_type = 5;
+			cmd_t.user_pipe_to = stoi(v_t[i].substr(1,v_t[i].size()));
+		}else if(v_t[i][0]=='<'){
+			in_out++;
+			cmd_t.in_type = 1;
+			cmd_t.user_pipe_from = stoi(v_t[i].substr(1,v_t[i].size()));				
 		}else{
+			if(in_out>0){
+				cmds.push_back(cmd_t);
+			       	cmd_t = {};
+				in_out=0;
+			}
 			cmd_t.parsed_cmd.push_back(v_t[i]);
-			cmd_remain = true;
 		}
 	}
-	if(cmd_remain) cmds.push_back(cmd_t);
+	cmds.push_back(cmd_t);
 	return cmds;
 }
 
@@ -153,7 +175,7 @@ void who(struct system_info& sys_info, int user_no){
 	string result = "<ID>\t<nickname>\t<IP:port>\t<indicate me>\n";
 	for(int i=0;i<MAX_USER;i++){
 		if(sys_info.user_bitmap[i]){
-			result += (to_string(i)+"\t"+sys_info.user_table[i].user_info.nickname+"\t"+sys_info.user_table[i].user_info.ip+":"+
+			result += (to_string(i+1)+"\t"+sys_info.user_table[i].user_info.nickname+"\t"+sys_info.user_table[i].user_info.ip+":"+
 					sys_info.user_table[i].user_info.port);
 			if(i==user_no){
 				result += "\t<-me";		
@@ -164,31 +186,22 @@ void who(struct system_info& sys_info, int user_no){
 	write(sys_info.user_table[user_no].sockfd,&result[0],result.size());
 }
 
-void tell(struct system_info& sys_info,int user_no,vector<string> parsed_cmd){
+void tell(struct system_info& sys_info,int user_no, vector<string> parsed_cmd){
 	
-	int recv_no = stoi(parsed_cmd[1]);
+	int recv_no = stoi(parsed_cmd[1])-1;
 	string response;
 	if(!sys_info.user_bitmap[recv_no]){
-		response = "*** Error: user #<"+to_string(recv_no)+"> does not exist yet. ***\n";
+		response = "*** Error: user #"+to_string(recv_no+1)+"does not exist yet. ***\n";
 		write(sys_info.user_table[user_no].sockfd,&response[0],response.size());
 		return;
 	}
 
 	string content = parsed_cmd[2];
-	for(int i=3;i<parsed_cmd.size();i++){
-		content += " ";
-		content += parsed_cmd[i];
-	}
 	response = "*** "+sys_info.user_table[user_no].user_info.nickname+" told you ***: "+content+"\n";
 	write(sys_info.user_table[recv_no].sockfd,&response[0],response.size());
 }
 
-void yell(struct system_info& sys_info,int user_no, vector<string> parsed_cmd){
-	string content = parsed_cmd[1];
-	for(int i=2;i<parsed_cmd.size();i++){
-		content += " ";
-		content += parsed_cmd[i];
-	}
+void yell(struct system_info& sys_info,int user_no, string content){
 	string response =  "*** "+sys_info.user_table[user_no].user_info.nickname+" yelled ***: "+content+"\n"; 
 	broadcast(sys_info,response);
 }
@@ -241,7 +254,7 @@ void user_printenv(struct system_info& sys_info,int user_no,string key){
 	}
 }
 
-pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cmd_std_out, int type, vector<struct Pipe>& pipe_table, struct system_info& sys_info){
+pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cmd_std_out, int cmd_std_err, int out_type, vector<struct Pipe>& pipe_table, struct system_info& sys_info){
 	vector<char*> argv;
 	for(int i=0;i<arg.size();i++){
 		argv.push_back((char*)arg[i].c_str());
@@ -257,11 +270,12 @@ pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cm
 	
 		dup2(cmd_std_in,STDIN_FILENO);
 		dup2(cmd_std_out,STDOUT_FILENO);
-		if(type==2){
+		dup2(cmd_std_err,STDERR_FILENO);
+		if(out_type==2){
 			dup2(cmd_std_out,STDERR_FILENO);
 		}
 
-		if(type==3||type==4){
+		if(out_type==3||out_type==4){
 			close(cmd_std_out);
 		}
 
@@ -317,6 +331,13 @@ void user_exit(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 	int client_fd = sys_info.user_table[user_no].sockfd;	
 	sys_info.user_bitmap[user_no] = false;
 	cout << "close fd: "<< client_fd << endl;
+	for(int i=0;i<MAX_USER;i++){
+		if(sys_info.user_pipe_bitmap[i][user_no]){
+			close(sys_info.user_pipe[i][user_no].pipe_in);
+			close(sys_info.user_pipe[i][user_no].pipe_out);
+			sys_info.user_pipe_bitmap[i][user_no]=false;
+		}
+	}
 	close(client_fd);
 	FD_CLR(client_fd, &active_fd_set);
 	
@@ -335,12 +356,12 @@ void welcome_new_user(struct system_info& sys_info,int client_fd,string ip,strin
 	sys_info.user_bitmap[user_no] = true;	
 	cout << user_no <<endl;
 	
-	string welcome_msg = "***************************************\n";
-	welcome_msg += "** Welcome to the information server **\n";
-	welcome_msg += "***************************************\n";
+	string welcome_msg = "****************************************\n";
+	welcome_msg += "** Welcome to the information server. **\n";
+	welcome_msg += "****************************************\n";
 	write(client_fd,&welcome_msg[0],welcome_msg.size());
 	
-	string content = "*** User ’(no name)’ entered from "+ip+":"+port+". ***\n";
+	string content = "*** User '(no name)' entered from "+ip+":"+port+". ***\n";
 	broadcast(sys_info,content);
 }
 
@@ -361,13 +382,18 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 
 	stringstream ss(buf);
 	string line;
-	getline(ss,line,'\r');	
+	getline(ss,line);	
 	
 	vector<struct CMD> cmds = parse_cmd(line);
 	pid_t last_cmd_pid;
+	bool error;
 
 	for(int i=0;i<cmds.size();i++){
-			
+	//	cout << cmds[i].parsed_cmd[0] << endl;
+	//	cout << cmds[i].in_type << endl;
+	//	cout << cmds[i].out_type << endl;
+	
+		error = false;	
 		update_pipe_table(sys_info.user_table[user_no].pipe_table);
 		if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"setenv")){
 			user_setenv(sys_info,user_no,cmds[i].parsed_cmd[1],cmds[i].parsed_cmd[2]);
@@ -388,7 +414,7 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			tell(sys_info,user_no,cmds[i].parsed_cmd);
 			return;
 		}else if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"yell")){
-			yell(sys_info,user_no,cmds[i].parsed_cmd);
+			yell(sys_info,user_no,cmds[i].parsed_cmd[1]);
 			return;
 		}
 		
@@ -402,27 +428,29 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			}
 		}	
 		if(!file_existed){
-			cout << "Unknown command: [" << cmds[i].parsed_cmd[0] << "]." << endl;
+			string rsp = "Unknown command: [" + cmds[i].parsed_cmd[0] + "].\n" ;
+			write(client_fd,&rsp[0],rsp.size());
 			continue;
 		}
 	
 		
-		int client_fd = sys_info.user_table[user_no].sockfd;	
-		int cmd_std_in,cmd_std_out;
+		int cmd_std_in,cmd_std_out,cmd_std_err;
 		int p,p_fd[2],f_fd;
 		int pipe_of_this_cmd = -1;
 		
 		/* prepare cmd std in */
-		if(cmds[i].type == 6)
+		if(cmds[i].in_type == 1) // clearly assign user pipe
 		{
-			int pipe_from = cmds[i].user;
+			int pipe_from = cmds[i].user_pipe_from-1;
 			if(!sys_info.user_bitmap[pipe_from]){
-				string rsp = "*** Error: user #"+to_string(pipe_from)+" does not exist yet. ***\n";
+				error = true;
+				string rsp = "*** Error: user #"+to_string(pipe_from+1)+" does not exist yet. ***\n";
 				write(client_fd,&rsp[0],rsp.size()); 
 				continue;
 			}
 			if(sys_info.user_pipe_bitmap[pipe_from][user_no] == false){
-				string rsp = "*** Error: the pipe #"+to_string(user_no)+"->#"+to_string(cmds[i].user)+" does not exist yet. ***\n";
+				error = true;
+				string rsp = "*** Error: the pipe #"+to_string(pipe_from+1)+"->#"+to_string(user_no+1)+" does not exist yet. ***\n";
 				write(client_fd,&rsp[0],rsp.size());
 				continue;
 			}
@@ -438,7 +466,7 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 		}
 
 		/* prepare cmd std out*/
-		if(cmds[i].type == 1 || cmds[i].type == 2){
+		if(cmds[i].out_type == 1 || cmds[i].out_type == 2){
 			p = search_pipe(sys_info.user_table[user_no].pipe_table,cmds[i].N);
 			if(p>=0){
 				cmd_std_out = sys_info.user_table[user_no].pipe_table[p].pipe_in; 	
@@ -446,18 +474,20 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 				create_new_pipe(sys_info.user_table[user_no].pipe_table,p_fd,cmds[i].N);
 				cmd_std_out = p_fd[1];
 			}
-		}else if(cmds[i].type == 3){
+		}else if(cmds[i].out_type == 3){
 			f_fd = open(cmds[i].filename.c_str(),O_RDWR|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
 			cmd_std_out = f_fd;
-		}else if(cmds[i].type == 5){
-			int pipe_to = cmds[i].user;
+		}else if(cmds[i].out_type == 5){
+			int pipe_to = cmds[i].user_pipe_to-1;
 			if(!sys_info.user_bitmap[pipe_to]){ 
-				string rsp = "*** Error: user #"+to_string(pipe_to)+" does not exist yet. ***\n" ;
+				error = true;
+				string rsp = "*** Error: user #"+to_string(pipe_to+1)+" does not exist yet. ***\n" ;
 				write(client_fd,&rsp[0],rsp.size());
 				continue;
 			}
 			if(sys_info.user_pipe_bitmap[user_no][pipe_to] == true){
-				string rsp = "*** Error: the pipe #"+to_string(user_no)+"->#"+to_string(cmds[i].user)+" already exists. ***\n";
+				error = true;
+				string rsp = "*** Error: the pipe #"+to_string(user_no+1)+"->#"+to_string(pipe_to+1)+" already exists. ***\n";
 				write(client_fd,&rsp[0],rsp.size());
 				continue;	
 			}
@@ -467,28 +497,27 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			cmd_std_out = client_fd;
 		}
 
+		/*prepare cmd std err*/
+		cmd_std_err = client_fd;
+
 		/* create child process */
-		last_cmd_pid = create_process(exe_path,cmds[i].parsed_cmd,cmd_std_in,cmd_std_out,cmds[i].type,sys_info.user_table[user_no].pipe_table,sys_info);
-		
+		last_cmd_pid = create_process(exe_path,cmds[i].parsed_cmd,cmd_std_in,cmd_std_out,cmd_std_err,cmds[i].out_type,sys_info.user_table[user_no].pipe_table,sys_info);
+	
 		/* close fd*/
 		if(pipe_of_this_cmd >= 0){
 			close(sys_info.user_table[user_no].pipe_table[pipe_of_this_cmd].pipe_in);
 			close(sys_info.user_table[user_no].pipe_table[pipe_of_this_cmd].pipe_out);
 			sys_info.user_table[user_no].pipe_table.erase(sys_info.user_table[user_no].pipe_table.begin()+pipe_of_this_cmd);
 		}
-		if(cmds[i].type == 3){
+
+		if(cmds[i].out_type == 3){
 			close(f_fd);
 		}
-		if(cmds[i].type == 6){
-			int pipe_from = cmds[i].user;
-			string cmd = cmds[i].parsed_cmd[0];
-			for(int j=1;j<cmds[i].parsed_cmd.size();j++){ 
-				cmd += " ";
-				cmd += cmds[i].parsed_cmd[j];
-			}
-			string rsp = "*** "+sys_info.user_table[pipe_from].user_info.nickname;
-			rsp += " (#"+to_string(pipe_from)+") just received from "+sys_info.user_table[user_no].user_info.nickname;
-			rsp += " (#"+to_string(user_no)+") by \'"+cmd+"\' ***\n";	
+		if(cmds[i].in_type == 1){
+			int pipe_from = cmds[i].user_pipe_from-1;
+			string rsp = "*** "+sys_info.user_table[user_no].user_info.nickname;
+			rsp += " (#"+to_string(user_no+1)+") just received from "+sys_info.user_table[pipe_from].user_info.nickname;
+			rsp += " (#"+to_string(pipe_from+1)+") by \'"+line+"\' ***\n";	
 			broadcast(sys_info,rsp);
 			
 			close(sys_info.user_pipe[pipe_from][user_no].pipe_in);
@@ -496,19 +525,15 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			sys_info.user_pipe_bitmap[pipe_from][user_no] = false;
 			
 		}
-		if(cmds[i].type ==5){
-			string cmd = cmds[i].parsed_cmd[0];
-			for(int j=1;j<cmds[i].parsed_cmd.size();j++){
-				cmd += " ";
-				cmd += cmds[i].parsed_cmd[j];
-			}
+		if(cmds[i].out_type ==5){
+			int pipe_to = cmds[i].user_pipe_to-1;
 			string rsp = "*** "+sys_info.user_table[user_no].user_info.nickname;
-			rsp += " (#"+to_string(user_no)+") just piped \'"+cmd+"\' to "+sys_info.user_table[cmds[i].user-1].user_info.nickname;
-			rsp += " (#"+to_string(cmds[i].user)+") ***\n";									
+			rsp += " (#"+to_string(user_no+1)+") just piped \'"+line+"\' to "+sys_info.user_table[pipe_to].user_info.nickname;
+			rsp += " (#"+to_string(pipe_to+1)+") ***\n";									
 			broadcast(sys_info,rsp);
 		}	
 	}
-	if(cmds.back().type == 0 || cmds.back().type == 6){
+	if(!error && cmds.back().out_type == 0){
 		int status;
 		waitpid(last_cmd_pid,&status,0);
 	}
