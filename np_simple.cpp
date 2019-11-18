@@ -64,37 +64,34 @@ int main(int argc, char* argv[]){
 	cout << "listening ...." << endl;
 	
 	socklen_t sin_size = sizeof(client_addr);
-	while(1){
+/*	char cwd[1024];
+	if (getcwd(cwd, sizeof(cwd)) != NULL) {
+		printf("Current working dir: %s\n", cwd);
+	}
+*/	while(1){
 		if((client_sockfd = accept(server_sockfd,(struct sockaddr*)&client_addr,&sin_size)) < 0){
 			cout << "accept error" << endl;
 			return -1;
 		}
-		
-		pid_t pid;
-	        while((pid=fork())<0){
-			usleep(1000);
-		};
+		pid_t pid = fork();
 		if(pid == 0){
-			cout << client_sockfd << endl;
-			dup2(client_sockfd,STDOUT_FILENO);
 			dup2(client_sockfd,STDIN_FILENO);
-			cout << "1" << endl;
+			dup2(client_sockfd,STDOUT_FILENO);
+			dup2(client_sockfd,STDERR_FILENO);
 			close(server_sockfd);
-			cout << "3" << endl;
 			close(client_sockfd);
-			cout << "2" << endl;
+
 			string cmd = "npshell";
 			char* arg[2];
 			arg[0] = &cmd[0];
 			arg[1] = NULL;
-			if((execv("npshell",arg)) < 0){
-				cout << "exe error"<< endl;
+			if((execv("/net/gcs/108/0856506/np2/npshell",arg)) < 0){
+				cout << "exec error "<<errno<<endl;
 				exit(EXIT_FAILURE);	
 			}				
 		}else{
 			close(client_sockfd);
 		}		
-	
 	}	
 	return 0;
 }
