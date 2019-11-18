@@ -10,13 +10,14 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include "npshell.h"
 
 using namespace std;
 
-void childHandler(int signo){
+/*void childHandler(int signo){
 	int status;
 	while(waitpid(-1,&status,WNOHANG)>0);
-}
+}*/
 
 int main(int argc, char* argv[]){
 	
@@ -81,14 +82,15 @@ int main(int argc, char* argv[]){
 			close(server_sockfd);
 			close(client_sockfd);
 
-			string cmd = "npshell";
+			npshell();
+		/*	string cmd = "npshell";
 			char* arg[2];
 			arg[0] = &cmd[0];
 			arg[1] = NULL;
 			if((execv("/net/gcs/108/0856506/np2/npshell",arg)) < 0){
 				cout << "exec error "<<errno<<endl;
 				exit(EXIT_FAILURE);	
-			}				
+			}*/				
 		}else{
 			close(client_sockfd);
 		}		
