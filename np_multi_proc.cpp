@@ -136,11 +136,12 @@ void system_rm_shm(int signo){
 }
 /* signal handler for sigusr1 */
 void read_msgbox(int signo){
+	//cout << whoami << endl;
 	int& ptr = sys_info->user_table[whoami].msgbox.read_ptr;
 	ptr++;
 	ptr=ptr%256;
 	string rsp = sys_info->user_table[whoami].msgbox.msg_queue[ptr];
-	cout << rsp;
+	cout << rsp << flush;
 }
 /* signal handler for sigusr2*/
 void create_user_pipe(int signo){
@@ -281,10 +282,13 @@ int get_user_no(){
 }
 
 void broadcast(string content){
+	//cout << "online user: " <<endl;
 	for(int i=0;i<MAX_USER;i++){
 		bool user_exist = sys_info->user_bitmap[i];
 		if(user_exist){
+			//cout <<"online: "<< i << " "<< endl;
 			write_msgbox(i,content);
+			usleep(500);
 		}
 	}
 }
@@ -672,7 +676,7 @@ void npshell(string ip,string port){
 				int pipe_to = cmds[i].user_pipe_to-1;
 				string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
 				rsp += " (#"+to_string(whoami+1)+") just piped '"+line+"' to "+string(sys_info->user_table[pipe_to].user_info.nickname);
-				rsp += " (#"+to_string(pipe_to+1)+") ***\n\r";				
+				rsp += " (#"+to_string(pipe_to+1)+") ***\n";				
 				broadcast(rsp);
 				close(sys_info->user_pipe[whoami][pipe_to].writefd);
 				sem_signal(semid);
