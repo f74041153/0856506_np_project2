@@ -140,8 +140,9 @@ void read_msgbox(int signo){
 	int& ptr = sys_info->user_table[whoami].msgbox.read_ptr;
 	ptr++;
 	ptr=ptr%256;
-	string rsp = sys_info->user_table[whoami].msgbox.msg_queue[ptr];
-	cout << rsp << flush;
+	write(1,sys_info->user_table[whoami].msgbox.msg_queue[ptr],strlen(sys_info->user_table[whoami].msgbox.msg_queue[ptr]));
+//	cout << rsp << flush;
+	signal(signo,read_msgbox);
 }
 /* signal handler for sigusr2*/
 void create_user_pipe(int signo){
@@ -177,17 +178,17 @@ void write_msgbox(int userno,string content){
 }
 
 void request_user_pipe(int pipe_from,int pipe_to){
-	sem_wait(semid);
+//	sem_wait(semid);
 	sys_info->user_pipe[pipe_from][pipe_to].signaled = true;
 	pid_t pid = sys_info->user_table[pipe_to].pid;
 	string user_pipe_file = "user_pipe/"+to_string(pipe_from)+"_"+to_string(pipe_to);
 	int mk = mknod(user_pipe_file.c_str(),S_IFIFO|0666,0);
 //	cout << "mknod " << mk << " " << errno << endl;	
-	sem_signal(semid);
+//	sem_signal(semid);
 
 	kill(pid,SIGUSR2);
 	
-	sem_wait(semid);
+//	sem_wait(semid);
 	//string user_pipe_file = "user_pipe/"+to_string(pipe_from)+"_"+to_string(pipe_to);
 	//cout << user_pipe_file << endl;
 	int writefd = open(user_pipe_file.c_str(),O_WRONLY,0666);
@@ -196,7 +197,7 @@ void request_user_pipe(int pipe_from,int pipe_to){
 	sys_info->user_pipe[pipe_from][pipe_to].writefd = writefd;
 	sys_info->user_pipe_bitmap[pipe_from][pipe_to] = true;
 	remove(user_pipe_file.c_str());
-	sem_signal(semid);
+//	sem_signal(semid);
 }
 
 void print_error(string err){
@@ -288,13 +289,13 @@ void broadcast(string content){
 		if(user_exist){
 			//cout <<"online: "<< i << " "<< endl;
 			write_msgbox(i,content);
-			usleep(500);
+			//usleep(500);
 		}
 	}
 }
 
 void who(){
-	sem_wait(semid);
+//	sem_wait(semid);
 	string result = "<ID>\t<nickname>\t<IP:port>\t<indicate me>\n";
 	for(int i=0;i<MAX_USER;i++){
 		if(sys_info->user_bitmap[i]){
@@ -307,30 +308,30 @@ void who(){
 		}			
 	}
 	cout << result;
-	sem_signal(semid);
+//	sem_signal(semid);
 }
 
 void tell(vector<string> parsed_cmd){
-	sem_wait(semid);
+//	sem_wait(semid);
 	int recv_no = stoi(parsed_cmd[1])-1;
 	string response;
 	if(!sys_info->user_bitmap[recv_no]){
 		response = "*** Error: user #"+to_string(recv_no+1)+"does not exist yet. ***\n";
 		cout << response;
-		sem_signal(semid);
+//		sem_signal(semid);
 		return;
 	}
 	string content = parsed_cmd[2];
 	response = "*** "+string(sys_info->user_table[whoami].user_info.nickname)+" told you ***: "+content+"\n";
 	write_msgbox(recv_no,response);
-	sem_signal(semid);
+//	sem_signal(semid);
 }
 
 void yell(string content){
-	sem_wait(semid);
+//	sem_wait(semid);
 	string response =  "*** "+string(sys_info->user_table[whoami].user_info.nickname)+" yelled ***: "+content+"\n"; 
 	broadcast(response);
-	sem_signal(semid);
+//	sem_signal(semid);
 }
 
 bool name_existed(string new_name){
@@ -346,17 +347,17 @@ bool name_existed(string new_name){
 
 void name(string new_name){
 	string rsp;
-	sem_wait(semid);
+//	sem_wait(semid);
 	if(name_existed(new_name)){
 		rsp = "*** User \'"+new_name+"\' already exists. ***\n";
 		cout << rsp;
-		sem_signal(semid);
+//		sem_signal(semid);
 		return;		
 	}
 	strcpy(sys_info->user_table[whoami].user_info.nickname,new_name.c_str());
 	rsp = "*** User from "+string(sys_info->user_table[whoami].user_info.ip)+":"+string(sys_info->user_table[whoami].user_info.port)+" is named \'"+new_name+"\'. ***\n";
 	broadcast(rsp);
-	sem_signal(semid);
+//	sem_signal(semid);
 }
 
 void user_setenv(string key,string value,map<string,vector<string>>& env){
@@ -447,7 +448,7 @@ void create_new_pipe(vector<struct Pipe>& pipe_table,int fd[],int N){
 }
 
 void user_exit(){
-	sem_wait(semid);
+//	sem_wait(semid);
 	sys_info->user_bitmap[whoami] = false;
 	for(int i=0;i<MAX_USER;i++){
 		if(sys_info->user_pipe_bitmap[i][whoami]){
@@ -458,14 +459,14 @@ void user_exit(){
 	}
 	string rsp = "*** User \'"+string(sys_info->user_table[whoami].user_info.nickname)+"\' left. ***\n";
 	broadcast(rsp);
-	sem_signal(semid);
+//	sem_signal(semid);
 	exit(EXIT_SUCCESS);
 }
 
 void welcome_new_user(string ip,string port){
 	
 	//cout << "wait out"<<endl;
-	sem_wait(semid);
+//	sem_wait(semid);
 //	cout << "wait in" <<endl;
 //	cout << sys_info << endl;
 	whoami = get_user_no();
@@ -487,7 +488,7 @@ void welcome_new_user(string ip,string port){
 	
 	string content = "*** User '(no name)' entered from "+ip+":"+port+". ***\n";
 	broadcast(content);
-	sem_signal(semid);
+//	sem_signal(semid);
 }
 
 bool fileExist(string filename){
@@ -575,25 +576,29 @@ void npshell(string ip,string port){
 			/* prepare cmd std in */
 			if(cmds[i].in_type == 1) // clearly assign user pipe
 			{
-				sem_wait(semid);
+//				sem_wait(semid);
 				int pipe_from = cmds[i].user_pipe_from-1;
 				if(!sys_info->user_bitmap[pipe_from]){
 					error = true;
 					string rsp = "*** Error: user #"+to_string(pipe_from+1)+" does not exist yet. ***\n";
 					cout << rsp;
-					sem_signal(semid);
+//					sem_signal(semid);
 					continue;
 				}
 				if(sys_info->user_pipe_bitmap[pipe_from][whoami] == false){
 					error = true;
 					string rsp = "*** Error: the pipe #"+to_string(pipe_from+1)+"->#"+to_string(whoami+1)+" does not exist yet. ***\n";
 					cout << rsp ;
-					sem_signal(semid);
+//					sem_signal(semid);
 					continue;
 				}
 				cmd_std_in = sys_info->user_pipe[pipe_from][whoami].readfd;
+				string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
+				rsp += " (#"+to_string(whoami+1)+") just received from "+string(sys_info->user_table[pipe_from    ].user_info.nickname);
+				rsp += " (#"+to_string(pipe_from+1)+") by \'"+line+"\' ***\n";  
+				broadcast(rsp);
 			//	cout << "cmd_std_in "<<cmd_std_in << endl;
-				sem_signal(semid);
+//				sem_signal(semid);
 			}else{
 				p = search_pipe(pipe_table,0);
 				pipe_of_this_cmd = p;
@@ -618,28 +623,32 @@ void npshell(string ip,string port){
 				f_fd = open(cmds[i].filename.c_str(),O_RDWR|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
 				cmd_std_out = f_fd;
 			}else if(cmds[i].out_type == 5){ //"cat a.txt >2"
-				sem_wait(semid);
+//				sem_wait(semid);
 				int pipe_to = cmds[i].user_pipe_to-1;
 			//	cout << "bitmap " << sys_info->user_bitmap[pipe_to] << endl;
 				if(!sys_info->user_bitmap[pipe_to]){ 
 					error = true;
 					string rsp = "*** Error: user #"+to_string(pipe_to+1)+" does not exist yet. ***\n" ;
 					cout << rsp;
-					sem_signal(semid);
+//					sem_signal(semid);
 					continue;
 				}
 				if(sys_info->user_pipe_bitmap[whoami][pipe_to] == true){
 					error = true;
 					string rsp = "*** Error: the pipe #"+to_string(whoami+1)+"->#"+to_string(pipe_to+1)+" already exists. ***\n";
 					cout << rsp;
-					sem_signal(semid);
+//					sem_signal(semid);
 					continue;	
 				}
-				sem_signal(semid);
+//				sem_signal(semid);
 				request_user_pipe(whoami,pipe_to);
-				sem_wait(semid);
+//				sem_wait(semid);
 				cmd_std_out = sys_info->user_pipe[whoami][pipe_to].writefd;
-				sem_signal(semid);
+				string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
+				rsp += " (#"+to_string(whoami+1)+") just piped '"+line+"' to "+string(sys_info->user_table[pipe_to].user_info.nickname);
+				rsp += " (#"+to_string(pipe_to+1)+") ***\n";                            
+				broadcast(rsp);
+//				sem_signal(semid);
 			}else{
 				cmd_std_out = STDOUT_FILENO;
 			}
@@ -660,26 +669,26 @@ void npshell(string ip,string port){
 				close(f_fd);
 			}
 			if(cmds[i].in_type == 1){
-				sem_wait(semid);
+//				sem_wait(semid);
 				int pipe_from = cmds[i].user_pipe_from-1;
-				string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
+			/*	string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
 				rsp += " (#"+to_string(whoami+1)+") just received from "+string(sys_info->user_table[pipe_from].user_info.nickname);
 				rsp += " (#"+to_string(pipe_from+1)+") by \'"+line+"\' ***\n";	
 				broadcast(rsp);
 				
-				close(sys_info->user_pipe[pipe_from][whoami].readfd);
+			*/	close(sys_info->user_pipe[pipe_from][whoami].readfd);
 				sys_info->user_pipe_bitmap[pipe_from][whoami] = false;
-				sem_signal(semid);
+//				sem_signal(semid);
 			}
 			if(cmds[i].out_type ==5){
-				sem_wait(semid);
+//				sem_wait(semid);
 				int pipe_to = cmds[i].user_pipe_to-1;
-				string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
+			/*	string rsp = "*** "+string(sys_info->user_table[whoami].user_info.nickname);
 				rsp += " (#"+to_string(whoami+1)+") just piped '"+line+"' to "+string(sys_info->user_table[pipe_to].user_info.nickname);
 				rsp += " (#"+to_string(pipe_to+1)+") ***\n";				
 				broadcast(rsp);
-				close(sys_info->user_pipe[whoami][pipe_to].writefd);
-				sem_signal(semid);
+			*/	close(sys_info->user_pipe[whoami][pipe_to].writefd);
+//				sem_signal(semid);
 			}	
 		}
 		if(!error && cmds.back().out_type == 0){
