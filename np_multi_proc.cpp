@@ -379,7 +379,7 @@ pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cm
 	if(pid == 0){
 		dup2(cmd_std_in,STDIN_FILENO);
 		dup2(cmd_std_out,STDOUT_FILENO);
-		dup2(cmd_std_err,STDERR_FILENO);
+	//	dup2(cmd_std_err,STDERR_FILENO);
 		if(out_type==2){
 			dup2(cmd_std_out,STDERR_FILENO);
 		}
