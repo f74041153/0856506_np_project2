@@ -232,6 +232,7 @@ void name(struct system_info& sys_info, int user_no, string new_name){
 }
 
 void user_setenv(struct system_info& sys_info,int user_no,string key,string value){
+	setenv(key.c_str(),value.c_str(),1);
 	stringstream ss(value);
 	string str;
 	vector<string> v;
@@ -274,11 +275,11 @@ pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cm
 		if(out_type==2){
 			dup2(cmd_std_out,STDERR_FILENO);
 		}
-
+		/* close fd for write file */
 		if(out_type==3||out_type==4){
 			close(cmd_std_out);
 		}
-
+		/* close all user pipe copy */
 		for(int i=0;i<MAX_USER;i++){
 			for(int j=0;j<MAX_USER;j++){
 				if(sys_info.user_pipe_bitmap[i][j]){
@@ -287,7 +288,7 @@ pid_t create_process(string cmd_path, vector<string> arg, int cmd_std_in, int cm
 				}
 			}
 		}
-		
+		/* close all pipe copy */
 		for(int i=0;i<pipe_table.size();i++){
 			close(pipe_table[i].pipe_in);
 			close(pipe_table[i].pipe_out);
@@ -331,6 +332,7 @@ void user_exit(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 	int client_fd = sys_info.user_table[user_no].sockfd;	
 	sys_info.user_bitmap[user_no] = false;
 	cout << "close fd: "<< client_fd << endl;
+	/* clean up all user pipe that pipe to this user */
 	for(int i=0;i<MAX_USER;i++){
 		if(sys_info.user_pipe_bitmap[i][user_no]){
 			close(sys_info.user_pipe[i][user_no].pipe_in);
@@ -348,6 +350,7 @@ void user_exit(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 void welcome_new_user(struct system_info& sys_info,int client_fd,string ip,string port){
 	
 	int user_no = get_user_no(sys_info);
+	clearenv();
 	user_setenv(sys_info,user_no,"PATH","bin:.");
 	sys_info.user_table[user_no].sockfd =client_fd;
 	sys_info.user_table[user_no].user_info.nickname = "(no name)";
@@ -379,22 +382,20 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 	char buf[1024];
 	memset(buf,0,sizeof(buf));
 	read(client_fd,buf,sizeof(buf));
-
 	stringstream ss(buf);
 	string line;
-	getline(ss,line);	
+	getline(ss,line);
+	if(line.size()<1 || line[0]=='\r'){
+		return;
+	}
 	
 	vector<struct CMD> cmds = parse_cmd(line);
-	pid_t last_cmd_pid;
-	bool error;
-
-	for(int i=0;i<cmds.size();i++){
-	//	cout << cmds[i].parsed_cmd[0] << endl;
-	//	cout << cmds[i].in_type << endl;
-	//	cout << cmds[i].out_type << endl;
 	
-		error = false;	
+	pid_t last_cmd_pid;
+	bool error = true;
+	for(int i=0;i<cmds.size();i++){
 		update_pipe_table(sys_info.user_table[user_no].pipe_table);
+		/*built-in command*/
 		if(!strcmp(cmds[i].parsed_cmd[0].c_str(),"setenv")){
 			user_setenv(sys_info,user_no,cmds[i].parsed_cmd[1],cmds[i].parsed_cmd[2]);
 			return;
@@ -417,7 +418,7 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			yell(sys_info,user_no,cmds[i].parsed_cmd[1]);
 			return;
 		}
-		
+		/* check whether command exists */
 		string exe_path;
 		bool file_existed = false;
 		for(int j=0;j<sys_info.user_table[user_no].env["PATH"].size();j++){
@@ -437,19 +438,16 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 		int cmd_std_in,cmd_std_out,cmd_std_err;
 		int p,p_fd[2],f_fd;
 		int pipe_of_this_cmd = -1;
-		
-		/* prepare cmd std in */
-		if(cmds[i].in_type == 1) // clearly assign user pipe
+		/* prepare cmd's stdin */
+		if(cmds[i].in_type == 1) // clearly assign user pipe ex: cat <2
 		{
 			int pipe_from = cmds[i].user_pipe_from-1;
 			if(!sys_info.user_bitmap[pipe_from]){
-				error = true;
 				string rsp = "*** Error: user #"+to_string(pipe_from+1)+" does not exist yet. ***\n";
 				write(client_fd,&rsp[0],rsp.size()); 
 				continue;
 			}
 			if(sys_info.user_pipe_bitmap[pipe_from][user_no] == false){
-				error = true;
 				string rsp = "*** Error: the pipe #"+to_string(pipe_from+1)+"->#"+to_string(user_no+1)+" does not exist yet. ***\n";
 				write(client_fd,&rsp[0],rsp.size());
 				continue;
@@ -465,7 +463,7 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			}
 		}
 
-		/* prepare cmd std out*/
+		/* prepare cmd's stdout*/
 		if(cmds[i].out_type == 1 || cmds[i].out_type == 2){
 			p = search_pipe(sys_info.user_table[user_no].pipe_table,cmds[i].N);
 			if(p>=0){
@@ -480,13 +478,11 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 		}else if(cmds[i].out_type == 5){
 			int pipe_to = cmds[i].user_pipe_to-1;
 			if(!sys_info.user_bitmap[pipe_to]){ 
-				error = true;
 				string rsp = "*** Error: user #"+to_string(pipe_to+1)+" does not exist yet. ***\n" ;
 				write(client_fd,&rsp[0],rsp.size());
 				continue;
 			}
 			if(sys_info.user_pipe_bitmap[user_no][pipe_to] == true){
-				error = true;
 				string rsp = "*** Error: the pipe #"+to_string(user_no+1)+"->#"+to_string(pipe_to+1)+" already exists. ***\n";
 				write(client_fd,&rsp[0],rsp.size());
 				continue;	
@@ -497,19 +493,19 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			cmd_std_out = client_fd;
 		}
 
-		/*prepare cmd std err*/
+		/*prepare cmd's stderr*/
 		cmd_std_err = client_fd;
 
 		/* create child process */
 		last_cmd_pid = create_process(exe_path,cmds[i].parsed_cmd,cmd_std_in,cmd_std_out,cmd_std_err,cmds[i].out_type,sys_info.user_table[user_no].pipe_table,sys_info);
-	
-		/* close fd*/
+		error = false;
+		
+		/* close fd */
 		if(pipe_of_this_cmd >= 0){
 			close(sys_info.user_table[user_no].pipe_table[pipe_of_this_cmd].pipe_in);
 			close(sys_info.user_table[user_no].pipe_table[pipe_of_this_cmd].pipe_out);
 			sys_info.user_table[user_no].pipe_table.erase(sys_info.user_table[user_no].pipe_table.begin()+pipe_of_this_cmd);
 		}
-
 		if(cmds[i].out_type == 3){
 			close(f_fd);
 		}
@@ -533,6 +529,7 @@ void npshell(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 			broadcast(sys_info,rsp);
 		}	
 	}
+	/* the line have things to output to screen */
 	if(!error && cmds.back().out_type == 0){
 		int status;
 		waitpid(last_cmd_pid,&status,0);
@@ -573,7 +570,6 @@ int main(int argc, char* argv[]){
 
 	string percent = "% ";
 	struct system_info sys_info={};
-	//create_user_pipe(sys_info);
 	socklen_t len = sizeof(struct sockaddr_in);	
 	int max_fd = server_sockfd;
 	fd_set active_fd_set;
@@ -592,11 +588,9 @@ int main(int argc, char* argv[]){
 		
 		//if select
 		if(select_return == -1){ 
-			//print_error("select error");
 			cout << "select error" << endl;
 			continue;
 		}else if (select_return == 0){
-			//cout << "select timeout" << endl;
 		       	continue;	
 		}else{
 			for(int i =0;i<FD_SETSIZE;i++){
@@ -629,11 +623,5 @@ int main(int argc, char* argv[]){
 			}
 		}				
 	}
-	/*for(int i=0;i<MAX_USER;i++){
-		for(int j=0;j<MAX_USER;j++){
-			close(sys_info.user_pipe[i][j].pipe_in);
-			close(sys_info.user_pipe[i][j].pipe_out); 			
-		}
-	}*/
 	return 0;
 }

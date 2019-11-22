@@ -164,6 +164,7 @@ void create_new_pipe(vector<struct Pipe>& pipe_table,int fd[],int N){
 
 int npshell(){
 	/* default path */
+	clearenv();
 	my_setenv("PATH","bin:.");	
 	vector<struct Pipe> pipe_table;
 	string line;
