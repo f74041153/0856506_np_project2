@@ -433,6 +433,8 @@ void create_new_pipe(vector<struct Pipe>& pipe_table,int fd[],int N){
 
 void user_exit(){
 //	sem_wait(semid);
+	string rsp = "*** User \'"+string(sys_info->user_table[whoami].user_info.nickname)+"\' left. ***\n";
+	broadcast(rsp);
 	sys_info->user_bitmap[whoami] = false;
 	/* clean up all user pipe that pipe to this user */
 	for(int i=0;i<MAX_USER;i++){
@@ -442,8 +444,8 @@ void user_exit(){
 			sys_info->user_pipe_bitmap[i][whoami] = false;
 		}
 	}
-	string rsp = "*** User \'"+string(sys_info->user_table[whoami].user_info.nickname)+"\' left. ***\n";
-	broadcast(rsp);
+//	string rsp = "*** User \'"+string(sys_info->user_table[whoami].user_info.nickname)+"\' left. ***\n";
+//	broadcast(rsp);
 //	sem_signal(semid);
 	exit(EXIT_SUCCESS);
 }

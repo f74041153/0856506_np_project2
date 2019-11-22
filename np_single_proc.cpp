@@ -328,7 +328,10 @@ void create_new_pipe(vector<struct Pipe>& pipe_table,int fd[],int N){
 }
 
 void user_exit(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
-	
+
+	string rsp = "*** User \'"+sys_info.user_table[user_no].user_info.nickname+"\' left. ***\n";
+	broadcast(sys_info,rsp);
+
 	int client_fd = sys_info.user_table[user_no].sockfd;	
 	sys_info.user_bitmap[user_no] = false;
 	cout << "close fd: "<< client_fd << endl;
@@ -342,9 +345,6 @@ void user_exit(struct system_info& sys_info,fd_set& active_fd_set,int user_no){
 	}
 	close(client_fd);
 	FD_CLR(client_fd, &active_fd_set);
-	
-	string rsp = "*** User \'"+sys_info.user_table[user_no].user_info.nickname+"\' left. ***\n";
-	broadcast(sys_info,rsp);
 }
 
 void welcome_new_user(struct system_info& sys_info,int client_fd,string ip,string port){
